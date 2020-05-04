@@ -243,6 +243,67 @@ func (p *ProxyLine) WriteProxyLine(w io.Writer) (err error) {
 	return
 }
 
+func (p *ProxyLine) WriteProxyLineV2(w io.Writer) (err error) {
+	pl := make([]byte, 12)
+	_ = copy(pl, _proxyV2)
+	pl = append(pl, byte(0x21))
+	switch p.Protocol {
+	case UNKNOWN:
+		pl = append(pl, byte(0x00))
+	case TCP4:
+		pl = append(pl, byte(0x11))
+	case TCP6:
+		pl = append(pl, byte(0x12))
+	case UDP4:
+		pl = append(pl, byte(0x21))
+	case UDP6:
+		pl = append(pl, byte(0x22))
+	case UNIXSTREAM:
+		pl = append(pl, byte(0x31))
+	case UNIXDGRAM:
+		pl = append(pl, byte(0x32))
+	default:
+		pl = append(pl, byte(0x00))
+	}
+
+	addr := []byte{}
+
+	if p.Protocol == TCP4 || p.Protocol == TCP6 {
+		srcaddr := p.SrcAddr.(*net.TCPAddr)
+		dstaddr := p.DstAddr.(*net.TCPAddr)
+		addr = append(addr, srcaddr.IP...)
+		addr = append(addr, dstaddr.IP...)
+		srcport := make([]byte, 2)
+		dstport := make([]byte, 2)
+		binary.BigEndian.PutUint16(srcport, uint16(srcaddr.Port))
+		binary.BigEndian.PutUint16(dstport, uint16(dstaddr.Port))
+		addr = append(addr, srcport...)
+		addr = append(addr, dstport...)
+	} else if p.Protocol == UDP4 || p.Protocol == UDP6 {
+		srcaddr := p.SrcAddr.(*net.UDPAddr)
+		dstaddr := p.DstAddr.(*net.UDPAddr)
+		addr = append(addr, srcaddr.IP...)
+		addr = append(addr, dstaddr.IP...)
+		srcport := make([]byte, 2)
+		dstport := make([]byte, 2)
+		binary.BigEndian.PutUint16(srcport, uint16(srcaddr.Port))
+		binary.BigEndian.PutUint16(dstport, uint16(dstaddr.Port))
+		addr = append(addr, srcport...)
+		addr = append(addr, dstport...)
+	} else if p.Protocol == UNIXSTREAM || p.Protocol == UNIXDGRAM {
+		srcaddr := p.SrcAddr.(*net.UnixAddr)
+		dstaddr := p.DstAddr.(*net.UnixAddr)
+		addr = append(addr, srcaddr.Name...)
+		addr = append(addr, dstaddr.Name...)
+	}
+
+	pl = append(pl, byte(len(addr)))
+	pl = append(pl, addr...)
+
+	_, err = w.Write(pl)
+	return
+}
+
 func parsePortNumber(portStr string) (port int, err error) {
 	port, err = strconv.Atoi(portStr)
 	if err == nil {
